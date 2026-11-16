@@ -154,6 +154,14 @@ def cmd_clean(days: int = 7, dry_run: bool = False) -> None:
         print(f"  - {t}")
 
 
+def cmd_qe_suite(config: str = "camera_profiles.json", demo: bool = False, checks: int = 20) -> None:
+    cmd = [sys.executable, "run_qe_suite.py", "--config", config, "--checks", str(checks)]
+    if demo:
+        cmd.append("--demo")
+    proc = subprocess.run(cmd, check=False)
+    raise SystemExit(proc.returncode)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="RTSP Multi-Channel QE Monitor CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -174,6 +182,11 @@ def main() -> None:
     p_clean.add_argument("--days", type=int, default=7, help="Retention days (default: 7)")
     p_clean.add_argument("--dry-run", action="store_true", help="Preview files without deleting")
 
+    p_qe = sub.add_parser("qe-suite", help="Run vendor profile & MTTR resilience QE suite")
+    p_qe.add_argument("--config", default="camera_profiles.json", help="Profile JSON/YAML path")
+    p_qe.add_argument("--demo", action="store_true", help="Run simulated camera probes")
+    p_qe.add_argument("--checks", type=int, default=20, help="Resilience checks per channel")
+
     p_web = sub.add_parser("web", help="Launch real-time Web Dashboard")
     p_web.add_argument("--port", type=int, default=8890, help="Dashboard port (default: 8890)")
     p_web.add_argument("--no-browser", action="store_true", help="Do not auto-open browser")
@@ -189,6 +202,8 @@ def main() -> None:
         cmd_report(log_file=args.file, no_slack=args.no_slack)
     elif args.command == "clean":
         cmd_clean(days=args.days, dry_run=args.dry_run)
+    elif args.command == "qe-suite":
+        cmd_qe_suite(config=args.config, demo=args.demo, checks=args.checks)
     elif args.command == "web":
         run_server(port=args.port, open_browser=not args.no_browser)
 

@@ -22,6 +22,7 @@ from urllib.parse import unquote
 
 BASE_DIR = Path(__file__).resolve().parent
 LOGS_DIR = BASE_DIR / "logs"
+REPORTS_DIR = BASE_DIR / "reports"
 CAMERAS_FILE = BASE_DIR / "cameras.json"
 ACTIVE_SERVER: Optional[ThreadingHTTPServer] = None
 LAST_CLIENT_SEEN: float = time.monotonic()
@@ -142,6 +143,13 @@ def collect_dashboard_state() -> Dict[str, Any]:
     if snap_dir.exists():
         snapshots = [p.name for p in sorted(snap_dir.glob("*.jpg"), reverse=True)[:8]]
 
+    reports: List[str] = []
+    if REPORTS_DIR.exists():
+        reports = [
+            p.name for p in sorted(REPORTS_DIR.iterdir(), reverse=True)
+            if p.is_file() and p.suffix.lower() in {".html", ".csv", ".md"}
+        ][:8]
+
     return {
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "mode": mode if is_running else "IDLE",
@@ -152,6 +160,7 @@ def collect_dashboard_state() -> Dict[str, Any]:
         "incidents": list(reversed(incidents[-10:])),
         "incident_count": len(incidents),
         "snapshots": snapshots,
+        "reports": reports,
         "log_file": latest_log.name if latest_log else "-",
         "recent_logs": recent_lines,
     }
@@ -170,6 +179,7 @@ def execute_manage_action(action: str) -> Dict[str, Any]:
         "discover_live": [sys.executable, "manage.py", "start", "--discover"],
         "stop": [sys.executable, "manage.py", "stop"],
         "report": [sys.executable, "manage.py", "report", "--no-slack"],
+        "qe_suite_demo": [sys.executable, "manage.py", "qe-suite", "--demo"],
         "clean": [sys.executable, "manage.py", "clean", "--days", "7", "--dry-run"],
     }
     cmd = action_map.get(action)
@@ -244,7 +254,7 @@ HTML_PAGE = """<!DOCTYPE html>
     <header>
       <div>
         <h1>RTSP Multi-Channel QE Monitor</h1>
-        <div class="meta">웹 제어 센터 · 실시간 스트리밍 상태 · 대역폭 · 장애 증적 (모니터링 중지 후 창을 닫으면 서버도 자동 종료)</div>
+        <div class="meta">웹 제어 센터 · 실시간 스트리밍 · 제조사 프로파일/MTTR 검증 · HTML/CSV 리포트</div>
       </div>
       <div class="meta">
         <span id="modeBadge" class="badge badge-mode">IDLE</span>
@@ -256,9 +266,9 @@ HTML_PAGE = """<!DOCTYPE html>
       <button class="btn-primary" onclick="runAction('start_demo')">▶ 가상 카메라 데모 시작</button>
       <button onclick="runAction('start_live')">▶ 실장비 모니터링 시작</button>
       <button onclick="runAction('discover_live')">🔍 ONVIF 탐색 후 시작</button>
+      <button class="btn-primary" onclick="runAction('qe_suite_demo')">🧪 스펙·MTTR 검증 리포트</button>
       <button class="btn-danger" onclick="runAction('stop')">⏹ 모니터링 중지</button>
       <button onclick="runAction('report')">📄 일일 리포트 생성</button>
-      <button onclick="runAction('clean')">🧹 7일 초과 로그 확인</button>
       <button class="btn-danger" onclick="runAction('shutdown_server')">⏻ 웹 제어 센터 종료</button>
     </div>
 
@@ -295,11 +305,15 @@ HTML_PAGE = """<!DOCTYPE html>
         </table>
       </div>
       <div class="card">
-        <h2>최근 장애 인시던트 &amp; 스냅샷</h2>
+        <h2>최근 장애 인시던트 · 스냅샷 · 리포트</h2>
         <table>
           <thead><tr><th>시각</th><th>채널</th><th>원인</th></tr></thead>
           <tbody id="incBody"></tbody>
         </table>
+        <div style="margin-top:12px;">
+          <div class="kpi-label">생성된 QA 리포트 (HTML/CSV/MD)</div>
+          <div id="reportList" class="snaps"></div>
+        </div>
         <div style="margin-top:12px;">
           <div class="kpi-label">저장된 스냅샷 (클릭해 확인)</div>
           <div id="snapList" class="snaps"></div>
@@ -367,6 +381,10 @@ HTML_PAGE = """<!DOCTYPE html>
           `<tr><td>${i.timestamp}</td><td><b>${i.channel}</b></td><td>${i.reason}</td></tr>`
         ).join('') || '<tr><td colspan="3">감지된 장애 없음</td></tr>';
 
+        document.getElementById('reportList').innerHTML = (d.reports || []).map(r =>
+          `<a class="snap-link" href="/reports/${encodeURIComponent(r)}" target="_blank">${r}</a>`
+        ).join('') || '<span class="meta">생성된 리포트 없음</span>';
+
         document.getElementById('snapList').innerHTML = d.snapshots.map(s =>
           `<a class="snap-link" href="/media/snapshots/${encodeURIComponent(s)}" target="_blank">${s}</a>`
         ).join('') || '<span class="meta">저장된 스냅샷 없음</span>';
@@ -420,6 +438,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 data = target.read_bytes()
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
+
+        if self.path.startswith("/reports/"):
+            fname = unquote(self.path.split("/reports/", 1)[1])
+            target = (REPORTS_DIR / Path(fname).name).resolve()
+            if target.exists() and target.is_file():
+                data = target.read_bytes()
+                ctype = {
+                    ".html": "text/html; charset=utf-8",
+                    ".csv": "text/csv; charset=utf-8",
+                    ".md": "text/markdown; charset=utf-8",
+                }.get(target.suffix.lower(), "application/octet-stream")
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", ctype)
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)

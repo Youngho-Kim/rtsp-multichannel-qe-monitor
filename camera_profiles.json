@@ -1,0 +1,37 @@
+{
+  "cameras": [
+    {
+      "vendor": "Hikvision",
+      "model": "DS-2CD2143G2-I",
+      "rtsp_url": "rtsp://demo:554/hikvision/ch1",
+      "expected_codec": "h264",
+      "expected_width": 1920,
+      "expected_height": 1080,
+      "expected_fps": 30.0,
+      "fps_tolerance": 3.0,
+      "max_gop_seconds": 2.0
+    },
+    {
+      "vendor": "Hanwha Vision",
+      "model": "XNO-6080R",
+      "rtsp_url": "rtsp://demo:554/hanwha/ch2",
+      "expected_codec": "h264",
+      "expected_width": 1920,
+      "expected_height": 1080,
+      "expected_fps": 30.0,
+      "fps_tolerance": 3.0,
+      "max_gop_seconds": 2.0
+    },
+    {
+      "vendor": "Dahua",
+      "model": "IPC-HDW2431T",
+      "rtsp_url": "rtsp://demo:554/dahua/ch3",
+      "expected_codec": "h265",
+      "expected_width": 2560,
+      "expected_height": 1440,
+      "expected_fps": 25.0,
+      "fps_tolerance": 2.5,
+      "max_gop_seconds": 2.0
+    }
+  ]
+}
